@@ -1,0 +1,9 @@
+{
+  "name": "capstone-design-log",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Team design log with in-page posting, hosted on Netlify",
+  "dependencies": {
+    "@netlify/blobs": "^8.1.0"
+  }
+}
