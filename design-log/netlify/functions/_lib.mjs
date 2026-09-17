@@ -28,11 +28,19 @@ export const newId = () =>
 
 const MAX_BODY = 20000;
 const MAX_TITLE = 200;
+const MAX_MEMBERS = 12;
+const MAX_NAME = 60;
 
 // Validate and normalise a posted entry. Returns {ok, value|error}.
 export function cleanEntry(input) {
   if (!input || typeof input !== "object") return { ok: false, error: "Body must be JSON" };
-  const name = String(input.name || "").trim();
+  // `members` lists everyone who worked on the entry; `name` (the first member) is kept for older clients/entries.
+  const members = Array.isArray(input.members)
+    ? [...new Set(input.members.map((m) => String(m).trim().slice(0, MAX_NAME)).filter(Boolean))].slice(0, MAX_MEMBERS)
+    : [];
+  const legacyName = String(input.name || "").trim().slice(0, MAX_NAME);
+  if (!members.length && legacyName) members.push(legacyName);
+  const name = members[0] || "";
   const date = String(input.date || "").trim();
   const title = String(input.title || "").trim().slice(0, MAX_TITLE);
   const body = String(input.body || "").replace(/\r\n/g, "\n").trim();
@@ -42,9 +50,9 @@ export function cleanEntry(input) {
   const imagesList = Array.isArray(input.images)
     ? input.images.filter((s) => typeof s === "string" && /^[a-z0-9-]+$/.test(s)).slice(0, 12)
     : [];
-  if (!name) return { ok: false, error: "Name is required" };
+  if (!name) return { ok: false, error: "Pick at least one member" };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { ok: false, error: "Date must be YYYY-MM-DD" };
   if (!body && !title) return { ok: false, error: "Write something in the entry" };
   if (body.length > MAX_BODY) return { ok: false, error: `Entry is too long (max ${MAX_BODY} characters)` };
-  return { ok: true, value: { name, date, title, body, tags, images: imagesList } };
+  return { ok: true, value: { name, members, date, title, body, tags, images: imagesList } };
 }

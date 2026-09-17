@@ -36,6 +36,9 @@ aside h3:first-child{margin-top:0}
 .filter .count{margin-left:auto;color:var(--muted);font-variant-numeric:tabular-nums}
 .dot{width:10px;height:10px;border-radius:50%;flex:none}
 .avatar{width:32px;height:32px;border-radius:50%;color:#fff;display:grid;place-items:center;font-weight:600;flex:none}
+.avatars{display:flex;flex:none}
+.avatars .avatar{margin-left:-8px;border:2px solid var(--card)}
+.avatars .avatar:first-child{margin-left:0}
 .m0{background:var(--m0)}.m1{background:var(--m1)}.m2{background:var(--m2)}.m3{background:var(--m3)}.m4{background:var(--m4)}.m5{background:var(--m5)}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin-bottom:14px}
 .entry header{display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap}
@@ -116,7 +119,7 @@ aside h3:first-child{margin-top:0}
   "use strict";
   const $ = (s, el = document) => el.querySelector(s);
   const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const PASS_KEY = "designlog.passcode", NAME_KEY = "designlog.name";
+  const PASS_KEY = "designlog.passcode", NAME_KEY = "designlog.name", MEMBERS_KEY = "designlog.members";
 
   let config = { title: "Design Log", subtitle: "", members: [], tags: [] };
   let entries = [];
@@ -125,6 +128,8 @@ aside h3:first-child{margin-top:0}
   try { passcode = localStorage.getItem(PASS_KEY) || ""; } catch {}
 
   const memberIndex = (n) => { const i = config.members.indexOf(n); return (i < 0 ? config.members.length : i) % 6; };
+  // Older entries only have `name`; newer ones list everyone who worked on it in `members`.
+  const membersOf = (e) => (Array.isArray(e?.members) && e.members.length ? e.members : [e?.name].filter(Boolean));
   const fmtDate = (d) => { const [y, m, day] = d.split("-").map(Number); return new Date(Date.UTC(y, m - 1, day)).toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" }); };
   const todayISO = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
   const render = (md) => DOMPurify.sanitize(marked.parse(md || "", { breaks: true }), { USE_PROFILES: { html: true } });
@@ -179,7 +184,7 @@ aside h3:first-child{margin-top:0}
   // ---------- filters ----------
   function renderFilters() {
     const tally = Object.fromEntries(config.members.map((m) => [m, 0]));
-    for (const e of entries) tally[e.name] = (tally[e.name] || 0) + 1;
+    for (const e of entries) for (const m of membersOf(e)) tally[m] = (tally[m] || 0) + 1;
     const names = [...config.members, ...Object.keys(tally).filter((n) => !config.members.includes(n))];
     $("#memberFilters").innerHTML =
       `<button class="filter ${!filterMember ? "active" : ""}" data-member="">All <span class="count">${entries.length}</span></button>` +
@@ -199,9 +204,9 @@ aside h3:first-child{margin-top:0}
     const edited = e.edits > 0 ? `<button class="link" data-history="${esc(e.id)}">edited ${e.edits}× · view history</button>` : "";
     return `<article class="card entry" data-id="${esc(e.id)}">
       <header>
-        <span class="avatar m${memberIndex(e.name)}">${esc(e.name[0])}</span>
+        <span class="avatars">${membersOf(e).map((m) => `<span class="avatar m${memberIndex(m)}" title="${esc(m)}">${esc(m[0])}</span>`).join("")}</span>
         <div class="head-text">
-          <div class="byline"><strong>${esc(e.name)}</strong> <time datetime="${esc(e.date)}">${fmtDate(e.date)}</time></div>
+          <div class="byline"><strong>${esc(membersOf(e).join(", "))}</strong> <time datetime="${esc(e.date)}">${fmtDate(e.date)}</time></div>
           ${e.title ? `<h2>${esc(e.title)}</h2>` : ""}
         </div>
         ${(e.tags || []).length ? `<div class="tags">${e.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}</div>` : ""}
@@ -218,7 +223,7 @@ aside h3:first-child{margin-top:0}
   }
 
   function renderList() {
-    const shown = entries.filter((e) => (!filterMember || e.name === filterMember) && (!filterTag || (e.tags || []).includes(filterTag)));
+    const shown = entries.filter((e) => (!filterMember || membersOf(e).includes(filterMember)) && (!filterTag || (e.tags || []).includes(filterTag)));
     $("#list").innerHTML = shown.map(entryCard).join("");
     $("#none").classList.toggle("hide", shown.length !== 0 || entries.length === 0);
     $("#total").textContent = entries.length === 0 ? "No entries yet." :
@@ -246,19 +251,22 @@ aside h3:first-child{margin-top:0}
   function openForm(entry) {
     editing = entry;
     pendingImages = (entry?.images || []).map((id) => ({ id }));
-    let lastName = ""; try { lastName = localStorage.getItem(NAME_KEY) || ""; } catch {}
-    const name = entry?.name || lastName || config.members[0] || "";
+    let lastMembers = [];
+    try { lastMembers = JSON.parse(localStorage.getItem(MEMBERS_KEY) || "null") || [localStorage.getItem(NAME_KEY)].filter(Boolean); } catch {}
+    const members = new Set(entry ? membersOf(entry) : (lastMembers.length ? lastMembers : config.members.slice(0, 1)));
+    const allMembers = [...new Set([...config.members, ...members])];
     const tags = new Set(entry?.tags || []);
     const allTags = [...new Set([...config.tags, ...tags])];
     $("#formCard").innerHTML = `
       <h2 style="margin:0 0 4px;font-size:1.1rem">${entry ? "Edit entry" : "New entry"}</h2>
+      <label>Members <span class="hint">(tick everyone who worked on this)</span></label>
+      <div class="checks" id="fMembers">${allMembers.map((m) => `<label><input type="checkbox" value="${esc(m)}" ${members.has(m) ? "checked" : ""}>${esc(m)}</label>`).join("")}</div>
       <div class="row">
-        <div><label>Member</label><select id="fName">${config.members.map((m) => `<option ${m === name ? "selected" : ""}>${esc(m)}</option>`).join("")}</select></div>
         <div><label>Date</label><input type="date" id="fDate" value="${esc(entry?.date || todayISO())}"></div>
       </div>
       <label>Title</label><input type="text" id="fTitle" placeholder="What did you work on?" value="${esc(entry?.title || "")}">
       <label>Phase</label>
-      <div class="checks">${allTags.map((t) => `<label><input type="checkbox" value="${esc(t)}" ${tags.has(t) ? "checked" : ""}>${esc(t)}</label>`).join("")}</div>
+      <div class="checks" id="fTags">${allTags.map((t) => `<label><input type="checkbox" value="${esc(t)}" ${tags.has(t) ? "checked" : ""}>${esc(t)}</label>`).join("")}</div>
       <label>Entry <span class="hint">(Markdown works: **bold**, - lists, | tables |, links)</span></label>
       <textarea id="fBody" placeholder="What you did, why, what you found, what's next.">${esc(entry?.body || "")}</textarea>
       <label>Photos <span class="hint">(sketches, CAD, test rigs — resized automatically)</span></label>
@@ -320,23 +328,26 @@ aside h3:first-child{margin-top:0}
   }
 
   async function save() {
+    const members = [...document.querySelectorAll("#fMembers input:checked")].map((c) => c.value);
+    const msg = $("#fMsg"); msg.textContent = "";
+    if (!members.length) { msg.textContent = "Tick at least one member"; return; }
     const payload = {
-      name: $("#fName").value, date: $("#fDate").value, title: $("#fTitle").value,
-      tags: [...document.querySelectorAll('.checks input:checked')].map((c) => c.value),
+      name: members[0], members, date: $("#fDate").value, title: $("#fTitle").value,
+      tags: [...document.querySelectorAll("#fTags input:checked")].map((c) => c.value),
       body: $("#fBody").value, images: pendingImages.map((i) => i.id),
     };
-    const msg = $("#fMsg"); msg.textContent = ""; $("#fSave").disabled = true;
+    $("#fSave").disabled = true;
     try {
       if (editing) await api("PUT", `/api/entries/${editing.id}`, payload);
       else await api("POST", "/api/entries", payload);
-      try { localStorage.setItem(NAME_KEY, payload.name); } catch {}
+      try { localStorage.setItem(MEMBERS_KEY, JSON.stringify(members)); localStorage.setItem(NAME_KEY, members[0]); } catch {}
       closeForm(); toast(editing ? "Saved" : "Posted"); await load();
     } catch (err) { msg.textContent = err.message; $("#fSave").disabled = false; }
   }
 
   async function removeEntry(id) {
     const e = entries.find((x) => x.id === id);
-    if (!confirm(`Delete "${e?.title || "this entry"}" by ${e?.name}? This cannot be undone.`)) return;
+    if (!confirm(`Delete "${e?.title || "this entry"}" by ${membersOf(e).join(", ")}? This cannot be undone.`)) return;
     try { await api("DELETE", `/api/entries/${id}`); toast("Deleted"); await load(); }
     catch (err) { toast(err.message); }
   }
@@ -351,7 +362,7 @@ aside h3:first-child{margin-top:0}
       <div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0;font-size:1.1rem">Edit history</h2><button class="btn small" id="mClose">Close</button></div>
       <p class="hint">Newest first. Current version is shown on the main page.</p>
       ${versions.map((v) => `<div class="version">
-        <div class="byline"><strong>${esc(v.name)}</strong> <time>${fmtDate(v.date)}</time> · saved ${new Date(v.at).toLocaleString("en-CA")}</div>
+        <div class="byline"><strong>${esc(membersOf(v).join(", "))}</strong> <time>${fmtDate(v.date)}</time> · saved ${new Date(v.at).toLocaleString("en-CA")}</div>
         ${v.title ? `<h3 style="margin:4px 0;font-size:1rem">${esc(v.title)}</h3>` : ""}
         ${(v.tags || []).length ? `<div class="tags">${v.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}</div>` : ""}
         <div class="body">${render(v.body)}</div>

@@ -58,7 +58,7 @@ export default async (req, context) => {
     const c = cleanEntry(input);
     if (!c.ok) return error(c.error, 400);
     const snapshot = {
-      at: existing.updatedAt, name: existing.name, date: existing.date, title: existing.title,
+      at: existing.updatedAt, name: existing.name, members: existing.members, date: existing.date, title: existing.title,
       body: existing.body, tags: existing.tags, images: existing.images,
     };
     const history = [...(existing.history || []), snapshot].slice(-MAX_HISTORY);
