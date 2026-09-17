@@ -130,6 +130,9 @@ aside h3:first-child{margin-top:0}
   const memberIndex = (n) => { const i = config.members.indexOf(n); return (i < 0 ? config.members.length : i) % 6; };
   // Older entries only have `name`; newer ones list everyone who worked on it in `members`.
   const membersOf = (e) => (Array.isArray(e?.members) && e.members.length ? e.members : [e?.name].filter(Boolean));
+  // Older entries were saved with lowercase tags; map them onto the spelling used in config.json so they match the phase headers.
+  const canonTag = (t) => config.tags.find((c) => c.toLowerCase() === String(t).toLowerCase()) || t;
+  const tagsOf = (e) => [...new Set((e?.tags || []).map(canonTag))];
   const fmtDate = (d) => { const [y, m, day] = d.split("-").map(Number); return new Date(Date.UTC(y, m - 1, day)).toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" }); };
   const todayISO = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
   const render = (md) => DOMPurify.sanitize(marked.parse(md || "", { breaks: true }), { USE_PROFILES: { html: true } });
@@ -189,8 +192,8 @@ aside h3:first-child{margin-top:0}
     $("#memberFilters").innerHTML =
       `<button class="filter ${!filterMember ? "active" : ""}" data-member="">All <span class="count">${entries.length}</span></button>` +
       names.map((m) => `<button class="filter ${filterMember === m ? "active" : ""}" data-member="${esc(m)}"><span class="dot m${memberIndex(m)}"></span>${esc(m)} <span class="count">${tally[m] || 0}</span></button>`).join("");
-    const tags = [...new Set([...config.tags, ...entries.flatMap((e) => e.tags || [])])];
-    const tagCount = (t) => entries.filter((e) => (e.tags || []).includes(t)).length;
+    const tags = [...new Set([...config.tags, ...entries.flatMap(tagsOf)])];
+    const tagCount = (t) => entries.filter((e) => tagsOf(e).includes(t)).length;
     $("#tagFilters").innerHTML =
       `<button class="filter ${!filterTag ? "active" : ""}" data-tag="">All</button>` +
       tags.map((t) => `<button class="filter ${filterTag === t ? "active" : ""}" data-tag="${esc(t)}">${esc(t)} <span class="count">${tagCount(t)}</span></button>`).join("");
@@ -209,7 +212,7 @@ aside h3:first-child{margin-top:0}
           <div class="byline"><strong>${esc(membersOf(e).join(", "))}</strong> <time datetime="${esc(e.date)}">${fmtDate(e.date)}</time></div>
           ${e.title ? `<h2>${esc(e.title)}</h2>` : ""}
         </div>
-        ${(e.tags || []).length ? `<div class="tags">${e.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}</div>` : ""}
+        ${tagsOf(e).length ? `<div class="tags">${tagsOf(e).map((t) => `<span class="tag">${esc(t)}</span>`).join("")}</div>` : ""}
       </header>
       ${e.body ? `<div class="body">${render(e.body)}</div>` : ""}
       ${imgs ? `<div class="gallery">${imgs}</div>` : ""}
@@ -223,7 +226,7 @@ aside h3:first-child{margin-top:0}
   }
 
   function renderList() {
-    const shown = entries.filter((e) => (!filterMember || membersOf(e).includes(filterMember)) && (!filterTag || (e.tags || []).includes(filterTag)));
+    const shown = entries.filter((e) => (!filterMember || membersOf(e).includes(filterMember)) && (!filterTag || tagsOf(e).includes(filterTag)));
     $("#list").innerHTML = shown.map(entryCard).join("");
     $("#none").classList.toggle("hide", shown.length !== 0 || entries.length === 0);
     $("#total").textContent = entries.length === 0 ? "No entries yet." :
@@ -255,7 +258,7 @@ aside h3:first-child{margin-top:0}
     try { lastMembers = JSON.parse(localStorage.getItem(MEMBERS_KEY) || "null") || [localStorage.getItem(NAME_KEY)].filter(Boolean); } catch {}
     const members = new Set(entry ? membersOf(entry) : (lastMembers.length ? lastMembers : config.members.slice(0, 1)));
     const allMembers = [...new Set([...config.members, ...members])];
-    const tags = new Set(entry?.tags || []);
+    const tags = new Set(tagsOf(entry));
     const allTags = [...new Set([...config.tags, ...tags])];
     $("#formCard").innerHTML = `
       <h2 style="margin:0 0 4px;font-size:1.1rem">${entry ? "Edit entry" : "New entry"}</h2>
@@ -364,7 +367,7 @@ aside h3:first-child{margin-top:0}
       ${versions.map((v) => `<div class="version">
         <div class="byline"><strong>${esc(membersOf(v).join(", "))}</strong> <time>${fmtDate(v.date)}</time> · saved ${new Date(v.at).toLocaleString("en-CA")}</div>
         ${v.title ? `<h3 style="margin:4px 0;font-size:1rem">${esc(v.title)}</h3>` : ""}
-        ${(v.tags || []).length ? `<div class="tags">${v.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}</div>` : ""}
+        ${tagsOf(v).length ? `<div class="tags">${tagsOf(v).map((t) => `<span class="tag">${esc(t)}</span>`).join("")}</div>` : ""}
         <div class="body">${render(v.body)}</div>
       </div>`).join("") || "<p class='hint'>No previous versions.</p>"}
     </div></div>`;
@@ -378,7 +381,7 @@ aside h3:first-child{margin-top:0}
     try { config = { ...config, ...(await (await fetch("/config.json")).json()) }; } catch {}
     document.title = config.title; $("#title").textContent = config.title; $("#subtitle").textContent = config.subtitle;
     const q = new URLSearchParams(location.search);
-    filterMember = q.get("member") || ""; filterTag = q.get("tag") || "";
+    filterMember = q.get("member") || ""; filterTag = q.get("tag") ? canonTag(q.get("tag")) : "";
     renderAuth();
     await load();
   })();

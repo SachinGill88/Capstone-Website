@@ -44,8 +44,10 @@ export function cleanEntry(input) {
   const date = String(input.date || "").trim();
   const title = String(input.title || "").trim().slice(0, MAX_TITLE);
   const body = String(input.body || "").replace(/\r\n/g, "\n").trim();
+  // Keep the tag's casing as sent (it comes from config.json), but dedupe case-insensitively.
+  const seenTags = new Set();
   const tags = Array.isArray(input.tags)
-    ? [...new Set(input.tags.map((t) => String(t).trim().toLowerCase()).filter(Boolean))].slice(0, 8)
+    ? input.tags.map((t) => String(t).trim()).filter((t) => t && !seenTags.has(t.toLowerCase()) && seenTags.add(t.toLowerCase())).slice(0, 8)
     : [];
   const imagesList = Array.isArray(input.images)
     ? input.images.filter((s) => typeof s === "string" && /^[a-z0-9-]+$/.test(s)).slice(0, 12)
